@@ -1,0 +1,81 @@
+name: 'jgrep semantic gate'
+description: 'Gate PRs on rules written in English and pick the tests a diff can break, with jgrep on TypeSafe Jev'
+author: 'kyu1204'
+branding:
+  icon: 'search'
+  color: 'blue'
+inputs:
+  mode:
+    description: '"diff" fails the job when the rule matches the diff; "tests" outputs the test files the diff can affect'
+    default: 'diff'
+  rule:
+    description: 'Rule in plain English (diff mode)'
+    required: false
+  base:
+    description: 'Git ref to diff against. Default: origin/<PR base branch>'
+    required: false
+  api-key:
+    description: 'TypeSafe API key (or use openrouter-api-key)'
+    required: false
+  openrouter-api-key:
+    description: 'OpenRouter API key (or use api-key)'
+    required: false
+  version:
+    description: 'npm version of jevgrep to install'
+    default: '0.5.0'
+  threshold:
+    description: 'Only count chunks with probability >= this (default 0.7)'
+    required: false
+outputs:
+  matched:
+    description: '"true" if the rule matched (diff mode)'
+    value: ${{ steps.run.outputs.matched }}
+  tests:
+    description: 'Newline-separated test files the diff can affect (tests mode)'
+    value: ${{ steps.run.outputs.tests }}
+  tests-file:
+    description: 'Path of a file holding the same list'
+    value: ${{ steps.run.outputs.tests-file }}
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - run: npm i -g "jevgrep@${{ inputs.version }}"
+      shell: bash
+    - id: run
+      shell: bash
+      env:
+        TYPESAFE_API_KEY: ${{ inputs.api-key }}
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        MODE: ${{ inputs.mode }}
+        RULE: ${{ inputs.rule }}
+        BASE: ${{ inputs.base }}
+        THRESHOLD: ${{ inputs.threshold }}
+        BASE_REF: ${{ github.base_ref }}
+        OUT_DIR: ${{ runner.temp }}
+      run: |
+        set +e
+        [ -z "$TYPESAFE_API_KEY" ] && unset TYPESAFE_API_KEY
+        [ -z "$OPENROUTER_API_KEY" ] && unset OPENROUTER_API_KEY
+        ref="${BASE:-origin/${BASE_REF:-main}}"
+        args=(); [ -n "$THRESHOLD" ] && args+=(-t "$THRESHOLD")
+        case "$MODE" in
+          diff)
+            [ -z "$RULE" ] && { echo "::error::mode 'diff' needs the 'rule' input"; exit 1; }
+            jgrep "${args[@]}" --diff "$ref" "$RULE"; code=$?
+            case $code in
+              0) echo "matched=true" >> "$GITHUB_OUTPUT"; echo "::error::jgrep found a match for rule: $RULE"; exit 1 ;;
+              1) echo "matched=false" >> "$GITHUB_OUTPUT" ;;
+              *) echo "::error::jgrep failed to run (exit $code): bad key, API down or malformed response"; exit 1 ;;
+            esac ;;
+          tests)
+            file="$OUT_DIR/jgrep-tests.txt"
+            jgrep "${args[@]}" --tests "$ref" > "$file"; code=$?
+            case $code in
+              0|1) { echo "tests-file=$file"; echo "tests<<EOF_JGREP"; cat "$file"; echo "EOF_JGREP"; } >> "$GITHUB_OUTPUT" ;;
+              *) echo "::error::jgrep failed to run (exit $code): bad key, API down or malformed response"; exit 1 ;;
+            esac ;;
+          *) echo "::error::mode must be 'diff' or 'tests'"; exit 1 ;;
+        esac
