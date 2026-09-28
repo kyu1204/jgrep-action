@@ -1,5 +1,7 @@
 name: self-test
-on: [push, pull_request]
+on:
+  push: { branches: [main] }
+  pull_request:
 jobs:
   bad-key-fails:
     runs-on: ubuntu-latest
@@ -9,6 +11,6 @@ jobs:
       - id: a
         uses: ./
         continue-on-error: true
-        with: { mode: tests, base: HEAD~1, api-key: fake }
+        with: { mode: diff, rule: adds a network call, base: HEAD~1, api-key: fake }
       - name: expect the action to fail (exit 2 path)
         run: '[ "${{ steps.a.outcome }}" = failure ]'
