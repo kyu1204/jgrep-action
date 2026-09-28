@@ -15,7 +15,7 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
       - uses: kyu1204/jgrep-action@v1
         with:
@@ -27,7 +27,7 @@ jobs:
 ## Test selection
 
 ```yaml
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
       - id: sel
         uses: kyu1204/jgrep-action@v1
@@ -48,7 +48,7 @@ jobs:
 | `api-key` | | TypeSafe key |
 | `openrouter-api-key` | | OpenRouter key (either key works) |
 | `version` | `0.5.0` | npm version of `jevgrep` |
-| `threshold` | `0.7` | minimum probability |
+| `threshold` | `0.7` (diff) / `0.5` (tests) | minimum probability |
 
 ## Outputs
 
@@ -57,6 +57,7 @@ jobs:
 | `matched` | `true`/`false` (diff mode) |
 | `tests` | newline-separated test files (tests mode) |
 | `tests-file` | path of a file with the same list |
+| `code` | jgrep exit code (0 match, 1 none, 2 error) |
 
 ## Exit codes
 

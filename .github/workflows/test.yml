@@ -6,11 +6,11 @@ jobs:
   bad-key-fails:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
       - id: a
         uses: ./
         continue-on-error: true
         with: { mode: diff, rule: adds a network call, base: HEAD~1, api-key: fake }
       - name: expect the action to fail (exit 2 path)
-        run: '[ "${{ steps.a.outcome }}" = failure ]'
+        run: '[ "${{ steps.a.outcome }}" = failure ] && [ "${{ steps.a.outputs.code }}" = 2 ]'

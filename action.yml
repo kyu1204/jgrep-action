@@ -24,12 +24,15 @@ inputs:
     description: 'npm version of jevgrep to install'
     default: '0.5.0'
   threshold:
-    description: 'Only count chunks with probability >= this (default 0.7)'
+    description: 'Only count chunks with probability >= this (default 0.7 for diff, 0.5 for tests)'
     required: false
 outputs:
   matched:
     description: '"true" if the rule matched (diff mode)'
     value: ${{ steps.run.outputs.matched }}
+  code:
+    description: 'jgrep exit code (0 match, 1 no match, 2 error)'
+    value: ${{ steps.run.outputs.code }}
   tests:
     description: 'Newline-separated test files the diff can affect (tests mode)'
     value: ${{ steps.run.outputs.tests }}
@@ -39,11 +42,12 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-    - run: npm i -g "jevgrep@${{ inputs.version }}"
+    - run: |
+        [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]] || { echo "::error::invalid version input"; exit 1; }
+        npm i -g "jevgrep@$VERSION"
       shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
     - id: run
       shell: bash
       env:
@@ -54,19 +58,27 @@ runs:
         BASE: ${{ inputs.base }}
         THRESHOLD: ${{ inputs.threshold }}
         BASE_REF: ${{ github.base_ref }}
+        EVENT_BEFORE: ${{ github.event.before }}
         OUT_DIR: ${{ runner.temp }}
       run: |
         set +e
         [ -z "$TYPESAFE_API_KEY" ] && unset TYPESAFE_API_KEY
         [ -z "$OPENROUTER_API_KEY" ] && unset OPENROUTER_API_KEY
-        ref="${BASE:-origin/${BASE_REF:-main}}"
+        if [ -n "$BASE" ]; then ref="$BASE"
+        elif [ -n "$BASE_REF" ]; then ref="origin/$BASE_REF"
+        else ref="$EVENT_BEFORE"; fi
+        if ! git rev-parse -q --verify "$ref^{commit}" >/dev/null; then
+          echo "::error::base ref '${ref//[$'\n\r']/ }' not found; use actions/checkout with fetch-depth: 0 (and set 'base' on push events)"
+          echo "code=2" >> "$GITHUB_OUTPUT"; exit 1
+        fi
         args=(); [ -n "$THRESHOLD" ] && args+=(-t "$THRESHOLD")
         case "$MODE" in
           diff)
             [ -z "$RULE" ] && { echo "::error::mode 'diff' needs the 'rule' input"; exit 1; }
             jgrep "${args[@]}" --diff "$ref" "$RULE"; code=$?
+            echo "code=$code" >> "$GITHUB_OUTPUT"
             case $code in
-              0) echo "matched=true" >> "$GITHUB_OUTPUT"; echo "::error::jgrep found a match for rule: $RULE"; exit 1 ;;
+              0) echo "matched=true" >> "$GITHUB_OUTPUT"; echo "::error::jgrep found a match for rule: ${RULE//$'\n'/ }"; exit 1 ;;
               1) echo "matched=false" >> "$GITHUB_OUTPUT" ;;
               *) echo "::error::jgrep failed to run (exit $code): bad key, API down or malformed response"; exit 1 ;;
             esac ;;
